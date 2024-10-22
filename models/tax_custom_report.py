@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 
-from odoo import models, fields, api
+from odoo import models, fields, api, Command, _
 import locale
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 import base64
 from dateutil.relativedelta import relativedelta
-
-
+import logging
+_logger = logging.getLogger(__name__)
 class ReportPerceptions(models.TransientModel):
     _name = 'account.tax_custom_report'
     
-    perc_account = fields.Many2one('account.account', string='Cuenta Contable')
+    perc_account = fields.Many2one('account.account', string='Cuenta Percepción')
     
     date_start = fields.Date(
         string='Fecha Inicio', 
@@ -34,11 +34,12 @@ class ReportPerceptions(models.TransientModel):
         column1='account_tax_custom_id',
         column2='move_line_id',
         string='Apuntes Contables',
-        compute='_compute_apunte_ids')
+        compute='_compute_perc_line_ids')
     
     @api.depends('date_end','date_start','perc_account')
-    def _compute_apunte_ids(self):
+    def _compute_perc_line_ids(self):
         for record in self:
+            _logger.warning('computing')
             if record.date_start and record.date_end and record.perc_account:
                 # Búsqueda de los apuntes contables entre las fechas y con la cuenta seleccionada
                 move_lines = self.env['account.move.line'].search([
@@ -46,19 +47,19 @@ class ReportPerceptions(models.TransientModel):
                     ('date', '<=', record.date_end),
                     ('account_id', '=', record.perc_account.id),
                 ])
-                # Asignar los apuntes contables encontrados
-                record.perc_line_ids = move_lines
+                _logger.warning(move_lines)
+                record.perc_line_ids = [Command.clear(), Command.set(move_lines.ids)]
             else:
-                record.perc_line_ids = False
-        
+                 record.perc_line_ids = [Command.clear()]
+
     
     def export_txt(self):
-        txt_content = self.format_line(self.record)
+        txt_content = self.format_line()
         txt_content = txt_content.replace('\n', '\r\n')
         # Codificar el contenido en base64
         file_content_base64 = base64.b64encode(txt_content.encode('utf-8')).decode('utf-8')
         # Crear un adjunto en Odoo
-        attachment = self.record.env['ir.attachment'].create({
+        attachment = self.env['ir.attachment'].create({
             'name': f"Percepciones_{self.get_month_name_or_date_range()}.txt",
             'type': 'binary',
             'datas': file_content_base64,
@@ -70,38 +71,23 @@ class ReportPerceptions(models.TransientModel):
             'target': 'self',
         }
     
-    def format_line(self, record):
-        formatted_lines = []
-        for apunte in record.apunte_ids:
-            tipo_operacion = self.tipoOperacion(apunte)
-            comprobante = self.obtenerComprobante(apunte,tipo_operacion)
-            formatted_line = str(tipo_operacion)                                                #Tipo de Operación 1:Retencion/2:Percepción
-            formatted_line += '029'                                             #Código de norma
-            formatted_line += str(apunte.date.strftime('%d/%m/%Y')).rjust(10)   #Fecha de Retención/Percepción
-            formatted_line += str(self.tipoComprobanteOrigen(tipo_operacion,apunte)).rjust(2,'0') #Tipo comprobante de Origen
-            formatted_line += str(self.tipoFactura(apunte,tipo_operacion)).rjust(1)                                               #Tipo de operación
-            formatted_line += self.AgipSequenceNumber(comprobante,tipo_operacion)
-            #formatted_line += str(comprobante.sequence_number).rjust(16,'0')    #Número de comprobante
-            formatted_line += str(comprobante.date.strftime('%d/%m/%Y')).rjust(10,'0')           #Fecha de comprobante
-            formatted_line += '{:.2f}'.format(self.montoComprobante(comprobante,tipo_operacion)).replace('.', ',').rjust(16, '0')      #Monto de comprobante
-            formatted_line += str(self.buscarNroCertificado(comprobante,record.tax_group_id_ret_agip,tipo_operacion)).split('-')[-1].ljust(16,' ')     #Nro de certificado propio
-            formatted_line += str(self.tipodeIdentificacion(apunte.partner_id))   #Tipo de identificacion 1:CDI/2:CUIL/3:CUIT
-            formatted_line += str(self.nrodeIdentificacion(apunte.partner_id)).rjust(11,'0')    #Nro de identificacion
-            formatted_line += str(self.situacionIb(apunte.partner_id))         #Situacion IB
-            formatted_line += str(self.nroIb(apunte.partner_id)).rjust(11,'0')  #Nro IB
-            formatted_line += str(self.situacionIva(apunte.partner_id))        #Situacion IVA
-            formatted_line += (str(self.razonSocial(apunte.partner_id))[:30] if len(str(self.razonSocial(apunte.partner_id))) > 30 else str(self.razonSocial(apunte.partner_id))).ljust(30, ' ') #Razon social
-            formatted_line += '{:.2f}'.format(self.importeOtrosConceptos(apunte,tipo_operacion,comprobante,self.record.tax_group_id_ret_agip)).replace('.', ',').rjust(16,'0') #Importe otros conceptos 
-            formatted_line += '{:.2f}'.format(self.ImporteIva(apunte,comprobante,tipo_operacion,self.record.tax_group_id_ret_agip)).replace('.', ',').rjust(16,'0') #Importe IVA 
-            formatted_line += '{:.2f}'.format(self.montoSujetoARetencion(comprobante,self.record.tax_group_id_ret_agip,tipo_operacion)).replace('.', ',').rjust(16, '0') #Monto sujeto a retención (Neto) 
-            formatted_line += '{:.2f}'.format(self.porcentajeAlicuota(comprobante,self.record.tax_group_id_ret_agip,self.record.tax_group_id_perc_agip,tipo_operacion)).replace('.', ',').rjust(5, '0') #Alicuota
-            formatted_line += '{:.2f}'.format(self.montoRetenido(apunte,comprobante,self.record.tax_group_id_ret_agip,tipo_operacion)).replace('.', ',').rjust(16, '0')
-            formatted_line += '{:.2f}'.format(self.montoRetenido(apunte,comprobante,self.record.tax_group_id_ret_agip,tipo_operacion)).replace('.', ',').rjust(16, '0')
-             
-            formatted_lines.append(formatted_line)
+    def format_line(self):
+        for record in self:
+            formatted_lines = []
+            for apunte in record.perc_line_ids:
+                comprobante = self.obtenerComprobante(apunte,2)
+                formatted_line = '493'                                          #Código de norma
+                formatted_line += str(apunte.partner_id.vat).rjust(11,'0')
+                formatted_line += str(apunte.date.strftime('%d/%m/%Y')).rjust(10)   #Fecha de Retención/Percepción
+                formatted_line += '    '
+                formatted_line += str(comprobante.sequence_prefix[-5:-1])
+                formatted_line += str(comprobante.sequence_number).rjust(8,'0')
+                formatted_line += '{:.2f}'.format(record.montoRetenido(apunte)).replace('.', ',').rjust(16, ' ')
+                 
+                formatted_lines.append(formatted_line)
             formatted_lines_reversed = list(reversed(formatted_lines))
-        formatted_lines.append('')
-        return "\n".join(formatted_lines_reversed)
+            formatted_lines.append('')
+            return "\n".join(formatted_lines_reversed)
 
     
     def get_month_name_or_date_range(self):
@@ -131,3 +117,15 @@ class ReportPerceptions(models.TransientModel):
             locale.setlocale(locale.LC_TIME, current_locale)
 
         return result
+
+    def obtenerComprobante(self,apunte,tipo_operacion):
+        if tipo_operacion == 1:
+            return apunte.move_id.payment_id
+        else:
+            return apunte.move_id
+
+    def montoRetenido(self,apunte):
+            if apunte.credit > 0:
+                return apunte.credit
+            elif apunte.debit > 0:
+                return apunte.debit
