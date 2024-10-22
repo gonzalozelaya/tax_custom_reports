@@ -7,7 +7,7 @@ import base64
 from dateutil.relativedelta import relativedelta
 
 
-class ReportPerceptions(models.Model):
+class ReportPerceptions(models.TransientModel):
     _name = 'account.tax_custom_report'
     
     perc_account = fields.Many2one('account.account', string='Cuenta Contable')

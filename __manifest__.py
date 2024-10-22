@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    'name': "my_module",
+    'name': "tax_custom_reports",
 
     'summary': """
         Short (1 phrase/line) summary of the module's purpose, used as
@@ -10,7 +10,7 @@
         Long description of module's purpose
     """,
 
-    'author': "My Company",
+    'author': "OutsourceArg",
     'website': "http://www.yourcompany.com",
 
     # Categories can be used to filter modules in modules listing
@@ -24,11 +24,8 @@
 
     # always loaded
     'data': [
-        # 'security/ir.model.access.csv',
+        'security/ir.model.access.csv',
         'views/tax_custom_report_views.xml',
     ],
-    # only loaded in demonstration mode
-    'demo': [
-        'demo/demo.xml',
-    ],
+
 }
