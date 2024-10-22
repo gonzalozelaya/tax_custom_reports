@@ -1,0 +1,45 @@
+<odoo>
+  <data>
+    <record id="tax_custom_report_view_form" model="ir.ui.view">
+      <field name="name">account.tax_custom_report.view.form</field>
+      <field name="model">account.tax_custom_report</field>
+      <field name="arch" type="xml">
+        <form string="Reporte de percepciones">
+          <header>
+            <button name="export_txt" type="object" string="Exportar Reporte" class="btn-primary" />
+          </header>
+          <sheet>
+            <group>
+              <field name="perc_account"/>
+              <field name="date_start" />
+              <field name="date_end" />
+            </group>
+            <notebook>
+              <page string="Apuntes contables">
+                <field name="perc_account" widget="many2many">
+                </field>
+              </page>
+            </notebook>
+          </sheet>
+        </form>
+      </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_tax_custom_report_view_form">
+      <field name="name">Reportes percepciones</field>
+      <field name="res_model">account.tax_custom_report</field>
+      <field name="view_mode">form</field>
+      <field name="view_id" ref="tax_custom_report_view_form"/>
+      <field name="target">current</field>
+  </record>
+
+  <!-- Menú en Contabilidad -> Reportes -->
+  <menuitem
+      id="menu_tax_custom_report_view_form"
+      name="Reportes percepciones"
+      parent="account.menu_finance_reports"
+      action="action_tax_custom_report_view_form"
+      sequence="10"/>
+
+  </data>
+</odoo>
