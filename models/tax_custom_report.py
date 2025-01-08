@@ -75,19 +75,32 @@ class ReportPerceptions(models.TransientModel):
         for record in self:
             formatted_lines = []
             for apunte in record.perc_line_ids:
-                comprobante = self.obtenerComprobante(apunte,2)
-                formatted_line = '493'                                          #Código de norma
-                formatted_line += str(apunte.partner_id.vat).rjust(11,'0')
-                formatted_line += str(apunte.date.strftime('%d/%m/%Y')).rjust(10)   #Fecha de Retención/Percepción
-                formatted_line += '    '
-                formatted_line += str(comprobante.sequence_prefix[-5:-1])
-                formatted_line += str(comprobante.sequence_number).rjust(8,'0')
-                formatted_line += '{:.2f}'.format(record.montoRetenido(apunte)).replace('.', ',').rjust(16, ' ')
-                 
+                comprobante = self.obtenerComprobante(apunte, 2)
+                
+                # Formatear el CUIT
+                cuit = str(apunte.partner_id.vat).zfill(11)
+                formatted_cuit = f"{cuit[:2]}-{cuit[2:10]}-{cuit[10:]}"
+                
+                # Formatear la fecha
+                formatted_date = apunte.date.strftime('%d/%m/%Y')
+                
+                # Formatear número de comprobante
+                sequence_prefix = comprobante.sequence_prefix[-5:-1] if comprobante.sequence_prefix else "0000"
+                sequence_number = str(comprobante.sequence_number).zfill(8)
+                
+                # Formatear monto
+                monto = '{:.2f}'.format(record.montoRetenido(apunte)).replace('.', ',')
+                formatted_monto = monto.zfill(16)
+                
+                # Crear la línea formateada
+                formatted_line = (
+                    f"493{formatted_cuit}{formatted_date}0000"
+                    f"{sequence_prefix.zfill(4)}{sequence_number.zfill(8)}"
+                    f"{formatted_monto}"
+                )
+                
                 formatted_lines.append(formatted_line)
-            formatted_lines_reversed = list(reversed(formatted_lines))
-            formatted_lines.append('')
-            return "\n".join(formatted_lines_reversed)
+            return "\n".join(formatted_lines)
 
     
     def get_month_name_or_date_range(self):
