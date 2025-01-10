@@ -7,7 +7,7 @@
         <form string="Reporte de percepciones">
           <header>
             <button name="export_txt" type="object" string="Exportar Txt" class="btn-primary" />
-            <button name="export_reported_invoices_xlsx" type="object" string="Control de reporte" />
+            <button name="export_reported_invoices_xlsx" type="object" string="Detalle facturas" />
               
           </header>
           <sheet>

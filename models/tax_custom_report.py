@@ -13,7 +13,9 @@ import xlsxwriter
 class ReportPerceptions(models.TransientModel):
     _name = 'account.tax_custom_report'
     
-    perc_account = fields.Many2one('account.account', string='Cuenta Percepción')
+    perc_account = fields.Many2one('account.account', 
+                                   string='Cuenta Percepción',
+                                   domain="[('report_type','in',['municipal','iva'])]")
 
     report_type = fields.Selection(
         selection=[('iva', 'IVA'), ('municipal', 'MUNICIPAL')],
