@@ -6,11 +6,14 @@
       <field name="arch" type="xml">
         <form string="Reporte de percepciones">
           <header>
-            <button name="export_txt" type="object" string="Exportar Reporte" class="btn-primary" />
+            <button name="export_txt" type="object" string="Exportar Txt" class="btn-primary" />
+            <button name="export_reported_invoices_xlsx" type="object" string="Control de reporte" />
+              
           </header>
           <sheet>
             <group>
               <field name="perc_account"/>
+              <field name="report_type"/>
               <field name="date_start" />
               <field name="date_end" />
             </group>

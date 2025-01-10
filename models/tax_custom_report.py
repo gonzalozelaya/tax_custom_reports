@@ -7,10 +7,20 @@ import base64
 from dateutil.relativedelta import relativedelta
 import logging
 _logger = logging.getLogger(__name__)
+import io
+import xlsxwriter
+
 class ReportPerceptions(models.TransientModel):
     _name = 'account.tax_custom_report'
     
     perc_account = fields.Many2one('account.account', string='Cuenta Percepción')
+
+    report_type = fields.Selection(
+        selection=[('iva', 'IVA'), ('municipal', 'MUNICIPAL')],
+        string='Tipo de Reporte',
+        related='perc_account.report_type',
+        readonly=True,
+    )
     
     date_start = fields.Date(
         string='Fecha Inicio', 
@@ -46,6 +56,7 @@ class ReportPerceptions(models.TransientModel):
                     ('date', '>=', record.date_start),
                     ('date', '<=', record.date_end),
                     ('account_id', '=', record.perc_account.id),
+                    ('move_id.state', '=', 'posted'),
                 ])
                 _logger.warning(move_lines)
                 record.perc_line_ids = [Command.clear(), Command.set(move_lines.ids)]
@@ -54,22 +65,40 @@ class ReportPerceptions(models.TransientModel):
 
     
     def export_txt(self):
-        txt_content = self.format_line()
-        txt_content = txt_content.replace('\n', '\r\n')
-        # Codificar el contenido en base64
-        file_content_base64 = base64.b64encode(txt_content.encode('utf-8')).decode('utf-8')
-        # Crear un adjunto en Odoo
-        attachment = self.env['ir.attachment'].create({
-            'name': f"Percepciones_{self.get_month_name_or_date_range()}.txt",
-            'type': 'binary',
-            'datas': file_content_base64,
-            'mimetype': 'text/plain',
-        })
-        return {
-            'type': 'ir.actions.act_url',
-            'url': '/web/content/%s?download=true' % attachment.id,
-            'target': 'self',
-        }
+        if self.report_type == 'iva':
+            txt_content = self.format_line()
+            txt_content = txt_content.replace('\n', '\r\n')
+            # Codificar el contenido en base64
+            file_content_base64 = base64.b64encode(txt_content.encode('utf-8')).decode('utf-8')
+            # Crear un adjunto en Odoo
+            attachment = self.env['ir.attachment'].create({
+                'name': f"Percepciones_IVA_{self.get_month_name_or_date_range()}.txt",
+                'type': 'binary',
+                'datas': file_content_base64,
+                'mimetype': 'text/plain',
+            })
+            return {
+                'type': 'ir.actions.act_url',
+                'url': '/web/content/%s?download=true' % attachment.id,
+                'target': 'self',
+            }
+        else:
+            txt_content = self.format_municipal()
+            txt_content = txt_content.replace('\n', '\r\n')
+            # Codificar el contenido en base64
+            file_content_base64 = base64.b64encode(txt_content.encode('utf-8')).decode('utf-8')
+            # Crear un adjunto en Odoo
+            attachment = self.env['ir.attachment'].create({
+                'name': f"Percepciones_IIBB_{self.get_month_name_or_date_range()}.txt",
+                'type': 'binary',
+                'datas': file_content_base64,
+                'mimetype': 'text/plain',
+            })
+            return {
+                'type': 'ir.actions.act_url',
+                'url': '/web/content/%s?download=true' % attachment.id,
+                'target': 'self',
+            }
     
     def format_line(self):
         for record in self:
@@ -97,6 +126,52 @@ class ReportPerceptions(models.TransientModel):
                     f"493{formatted_cuit}{formatted_date}0000"
                     f"{sequence_prefix.zfill(4)}{sequence_number.zfill(8)}"
                     f"{formatted_monto}"
+                )
+                
+                formatted_lines.append(formatted_line)
+            return "\n".join(formatted_lines)
+
+    def format_municipal(self):
+        for record in self:
+            formatted_lines = []
+            for apunte in record.perc_line_ids:
+                comprobante = self.obtenerComprobante(apunte, 2)
+                
+                # Formatear el CUIT
+                cuit = str(apunte.partner_id.vat).zfill(11)
+                formatted_cuit = f"{cuit[:2]}-{cuit[2:10]}-{cuit[10:]}"
+    
+                # Formatear la fecha
+                formatted_date = apunte.date.strftime('%d/%m/%Y')
+    
+                doc_number = comprobante.l10n_latam_document_number if comprobante.l10n_latam_document_number else "0000-00000000"
+            
+                # Procesar el documento para eliminar solo el primer '0' del bloque inicial
+                parts = doc_number.split('-')
+                part1 = parts[0].lstrip('0').zfill(4)  # Asegurarse de que sean 4 dígitos después de eliminar el primer '0'
+                part2 = parts[1].zfill(8)  # Asegurarse de que el segundo bloque tenga exactamente 8 dígitos
+                
+                doc_number_cleaned = part1 + part2
+
+                sequence_prefix = comprobante.sequence_prefix[-5:-1] if comprobante.sequence_prefix else "0000"
+                sequence_number = str(comprobante.sequence_number).zfill(8)
+                formatted_comprobante = f"{sequence_prefix}-{sequence_number}"
+                _logger.info(f"Comprobante formateado {formatted_comprobante}")
+    
+                # Formatear monto
+                monto = '{:.2f}'.format(record.montoRetenido(apunte)).replace('.', ',')
+                formatted_monto = monto.zfill(11)
+    
+                # Código prefijo fijo como 902
+                code_prefix = "902"
+    
+                # Código de Tipo de Comprobante
+                tax_code = comprobante.l10n_latam_document_type_id.doc_code_prefix[:2] if comprobante.l10n_latam_document_type_id and comprobante.l10n_latam_document_type_id.doc_code_prefix else "FA"
+    
+                # Crear la línea formateada
+                formatted_line = (
+                    f"{code_prefix}{formatted_cuit}{formatted_date}"
+                    f"{doc_number_cleaned}{tax_code}{formatted_monto}"
                 )
                 
                 formatted_lines.append(formatted_line)
@@ -142,3 +217,69 @@ class ReportPerceptions(models.TransientModel):
                 return apunte.credit
             elif apunte.debit > 0:
                 return apunte.debit
+
+    def export_reported_invoices_xlsx(self):
+        for record in self:
+            # Crear un archivo en memoria
+            output = io.BytesIO()
+    
+            # Crear el archivo XLSX
+            workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+            worksheet = workbook.add_worksheet("Facturas Reportadas")
+    
+            # Formatos
+            bold = workbook.add_format({'bold': True})
+            currency = workbook.add_format({'num_format': '#,##0.00'})
+    
+            # Encabezados
+            headers = ['Fecha', 'Número de Documento', 'Cliente', 'Monto Total', 'Monto Percepción']
+            for col_num, header in enumerate(headers):
+                worksheet.write(0, col_num, header, bold)
+    
+            # Ajustar el ancho de las columnas
+            worksheet.set_column(0, 0, 15)  # Fecha
+            worksheet.set_column(1, 1, 25)  # Número de Documento
+            worksheet.set_column(2, 2, 30)  # Cliente
+            worksheet.set_column(3, 3, 15)  # Monto Total
+            worksheet.set_column(4, 4, 20)  # Monto Percepción
+    
+            # Obtener las líneas contables seleccionadas
+            move_lines = record.perc_line_ids.mapped('move_id')
+            if not move_lines:
+                raise UserError(_("No se encontraron facturas reportadas."))
+    
+            # Escribir datos
+            row = 1
+            for move in move_lines:
+                monto_percepcion = sum(
+                    line.debit for line in move.line_ids.filtered(lambda l: l.account_id == record.perc_account)
+                )
+                worksheet.write(row, 0, move.invoice_date.strftime('%Y/%m/%d') if move.invoice_date else '')
+                worksheet.write(row, 1, move.name or '')
+                worksheet.write(row, 2, move.partner_id.name or '')
+                worksheet.write(row, 3, move.amount_total, currency)
+                worksheet.write(row, 4, monto_percepcion, currency)
+                row += 1
+    
+            # Cerrar el archivo XLSX
+            workbook.close()
+            output.seek(0)
+    
+            # Convertir contenido a base64
+            xlsx_content = base64.b64encode(output.read()).decode('utf-8')
+            output.close()
+    
+            # Crear adjunto en Odoo
+            attachment = self.env['ir.attachment'].create({
+                'name': f"Facturas_Reportadas_{record.get_month_name_or_date_range()}.xlsx",
+                'type': 'binary',
+                'datas': xlsx_content,
+                'mimetype': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            })
+    
+            # Devolver el archivo como descarga
+            return {
+                'type': 'ir.actions.act_url',
+                'url': f'/web/content/{attachment.id}?download=true',
+                'target': 'self',
+            }
