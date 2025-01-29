@@ -6,10 +6,11 @@ from datetime import datetime, timedelta
 import base64
 from dateutil.relativedelta import relativedelta
 import logging
-_logger = logging.getLogger(__name__)
 import io
 import xlsxwriter
 
+
+_logger = logging.getLogger(__name__)
 class ReportPerceptions(models.TransientModel):
     _name = 'account.tax_custom_report'
     
@@ -120,9 +121,11 @@ class ReportPerceptions(models.TransientModel):
                 sequence_number = str(comprobante.sequence_number).zfill(8)
                 
                 # Formatear monto
-                monto = '{:.2f}'.format(record.montoRetenido(apunte)).replace('.', ',')
-                formatted_monto = monto.zfill(16)
-                
+                monto_retenido = record.montoRetenido(apunte)
+                monto = '{:.2f}'.format(monto_retenido).replace('.', ',')  # Formato con 2 decimales y coma decimal
+                formatted_monto = monto.rjust(16, '0')
+                _logger.info(f"Monto: {monto_retenido}")
+
                 # Crear la línea formateada
                 formatted_line = (
                     f"493{formatted_cuit}{formatted_date}0000"
@@ -138,11 +141,14 @@ class ReportPerceptions(models.TransientModel):
             formatted_lines = []
             for apunte in record.perc_line_ids:
                 comprobante = self.obtenerComprobante(apunte, 2)
+
+                #Tipo de jurisdiccion
+                juridiccion = self.obtenerJuridiccion(apunte)
                 
                 # Formatear el CUIT
                 cuit = str(apunte.partner_id.vat).zfill(11)
                 formatted_cuit = f"{cuit[:2]}-{cuit[2:10]}-{cuit[10:]}"
-    
+        
                 # Formatear la fecha
                 formatted_date = apunte.date.strftime('%d/%m/%Y')
     
@@ -163,7 +169,6 @@ class ReportPerceptions(models.TransientModel):
                 # Formatear monto
                 monto = '{:.2f}'.format(record.montoRetenido(apunte)).replace('.', ',')
                 formatted_monto = monto.zfill(11)
-    
                 # Código prefijo fijo como 902
                 code_prefix = "902"
     
@@ -172,7 +177,7 @@ class ReportPerceptions(models.TransientModel):
     
                 # Crear la línea formateada
                 formatted_line = (
-                    f"{code_prefix}{formatted_cuit}{formatted_date}"
+                    f"{juridiccion}{formatted_cuit}{formatted_date}"
                     f"{doc_number_cleaned}{tax_code}{formatted_monto}"
                 )
                 
@@ -207,7 +212,21 @@ class ReportPerceptions(models.TransientModel):
             locale.setlocale(locale.LC_TIME, current_locale)
 
         return result
-
+        
+    def obtenerJuridiccion(self,apunte):
+        jur = 0
+        for tag in apunte.tax_tag_ids:
+            if tag.code != 0:
+                jur = tag.code
+        if jur == 0:
+            if apunte.account_id.id == 58:
+                jur = 901
+            elif apunte.account_id.id == 61:
+                jur = 902
+            elif apunte.account_id.id == 79:
+                jur = 903
+        return jur
+    
     def obtenerComprobante(self,apunte,tipo_operacion):
         if tipo_operacion == 1:
             return apunte.move_id.payment_id
@@ -216,7 +235,7 @@ class ReportPerceptions(models.TransientModel):
 
     def montoRetenido(self,apunte):
             if apunte.credit > 0:
-                return apunte.credit
+                return -(apunte.credit)
             elif apunte.debit > 0:
                 return apunte.debit
 

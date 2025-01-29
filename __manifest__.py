@@ -25,6 +25,7 @@
     'data': [
         'security/ir.model.access.csv',
         'views/tax_custom_report_views.xml',
+        'views/account_tag.xml',
     ],
 
 }

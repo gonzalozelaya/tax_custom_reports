@@ -1,0 +1,12 @@
+<odoo>
+    <record id="view_account_tag_form_inherit" model="ir.ui.view">
+        <field name="name">account.account.tag.form.inherit</field>
+        <field name="model">account.account.tag</field>
+        <field name="inherit_id" ref="account.account_tag_view_form"/>
+        <field name="arch" type="xml">
+            <group position="inside">
+                <field name="code" string="Código"/>
+            </group>
+        </field>
+    </record>
+</odoo>
